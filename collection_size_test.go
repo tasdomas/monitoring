@@ -23,7 +23,8 @@ type collectionSizeSuite struct {
 }
 
 func (s *collectionSizeSuite) TestCollectionSizeReporting(c *gc.C) {
-	u := monitoring.NewCollectionSizeCollector("test", "test", "test", "test", "test_collection", s.Session)
+	getter := monitoring.NewStatsGetter(s.Session)
+	u := monitoring.NewCollectionSizeCollector("test", "test", "test", "test", "test_collection", getter)
 
 	collection := s.Session.DB("test").C("test_collection")
 	err := collection.Insert(bson.M{"test": true})
@@ -92,4 +93,62 @@ func (s *collectionSizeSuite) TestCollectionSizeReporting(c *gc.C) {
 	cnt = raw.GetGauge()
 	val = cnt.GetValue()
 	c.Assert(val, gc.Equals, float64(2.0))
+}
+
+func (s *collectionSizeSuite) TestCollectionOnClosedSession(c *gc.C) {
+	session := s.Session.Copy()
+	getter := monitoring.NewStatsGetter(session)
+	getter.Close()
+	u := monitoring.NewCollectionSizeCollector("test", "test", "test", "test", "test_collection", getter)
+
+	collection := s.Session.DB("test").C("test_collection")
+	err := collection.Insert(bson.M{"test": true})
+	c.Assert(err, jc.ErrorIsNil)
+
+	ch := make(chan prometheus.Metric, 2)
+
+	u.Collect(ch)
+	// read the size
+	select {
+	case <-ch:
+		c.Fatalf("we expected no metric")
+	default:
+	}
+
+	// read the count
+	select {
+	case <-ch:
+		c.Fatalf("we expected no metric")
+	default:
+	}
+}
+
+// TestCollectionOnClosedSessionGraceful closes the session directly and checks
+// we handle this cleanly without panicing.
+func (s *collectionSizeSuite) TestCollectionOnClosedSessionGraceful(c *gc.C) {
+	session := s.Session.Copy()
+	getter := monitoring.NewStatsGetter(session)
+	session.Close() // We close the session directly.
+	u := monitoring.NewCollectionSizeCollector("test", "test", "test", "test", "test_collection", getter)
+
+	collection := s.Session.DB("test").C("test_collection")
+	err := collection.Insert(bson.M{"test": true})
+	c.Assert(err, jc.ErrorIsNil)
+
+	ch := make(chan prometheus.Metric, 2)
+
+	u.Collect(ch)
+	// read the size
+	select {
+	case <-ch:
+		c.Fatalf("we expected no metric")
+	default:
+	}
+
+	// read the count
+	select {
+	case <-ch:
+		c.Fatalf("we expected no metric")
+	default:
+	}
 }
