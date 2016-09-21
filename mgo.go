@@ -25,6 +25,8 @@ type MgoStatsCollector struct {
 // NewMgoStatsCollector creates a MgoStatsCollector for the given
 // namespace (which may be empty).
 func NewMgoStatsCollector(namespace string) *MgoStatsCollector {
+	// Enable stats in the mgo driver.
+	mgo.SetStats(true)
 	return &MgoStatsCollector{
 		clusters: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
