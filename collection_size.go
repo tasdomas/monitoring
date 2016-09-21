@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/juju/errors"
 	"github.com/juju/loggo"
 	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/mgo.v2"
@@ -23,82 +22,42 @@ type stats struct {
 	Size  int32 `bson:"size"`
 }
 
-type statsGetter struct {
-	lock    sync.Mutex
-	session *mgo.Session
-	closed  bool
-}
-
-// NewStatsGetter returns a new new statsGetter used for
-// getting Count and Size information about a collection
-// and closing the session.
-func NewStatsGetter(s *mgo.Session) *statsGetter {
-	return &statsGetter{
-		session: s,
-	}
-}
-
-// Get returns the Count and Size information of the given collection.
-// If the underlying session is already closed it returns an error.
-func (s *statsGetter) Get(db, coll string) (st stats, err error) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	if s.closed {
-		return st, errors.New("session is closed")
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			s.closed = true
-			log.Warningf("recovered from panic: %v", r)
-			err = errors.New("session is closed")
-		}
-	}()
-	session := s.session.Copy()
-	defer session.Close()
-
-	collection := session.DB(db).C(coll)
-	err = collection.Database.Run(bson.M{"collStats": collection.Name}, &st)
-	if err != nil {
-		return st, errors.Trace(err)
-	}
-	return st, nil
-}
-
-// Close closes the underlying mgo session.
-func (s *statsGetter) Close() {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	s.session.Close()
-	s.closed = true
-}
-
 // CollectionSizeCollector implements the prometheus.Collector interface and
 // reports the size of the specified mongo collection.
 type CollectionSizeCollector struct {
 	sizeDesc  *prometheus.Desc
 	countDesc *prometheus.Desc
 
-	statsGetter    *statsGetter
-	database       string
-	collectionName string
+	mu         sync.Mutex
+	collection *mgo.Collection
+	closed     bool
 }
 
-// NewCollectionSizeCollector returns a new collection size collector with specified properties.
-func NewCollectionSizeCollector(namespace, subsystem, namePrefix, database, collectionName string, getter *statsGetter) *CollectionSizeCollector {
+// NewCollectionSizeCollector returns a new collector with specified properties
+// that monitors the size of the given collection.
+// It should be closed after use.
+func NewCollectionSizeCollector(namespace, subsystem, namePrefix string, collection *mgo.Collection) *CollectionSizeCollector {
 	return &CollectionSizeCollector{
 		sizeDesc: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, subsystem, fmt.Sprintf("%s_collection_size_bytes", namePrefix)),
-			fmt.Sprintf("%v collection size in bytes", collectionName),
+			fmt.Sprintf("%v collection size in bytes", collection.Name),
 			nil,
 			nil),
 		countDesc: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, subsystem, fmt.Sprintf("%s_collection_count", namePrefix)),
-			fmt.Sprintf("%v collection object count", collectionName),
+			fmt.Sprintf("%v collection object count", collection.Name),
 			nil,
 			nil),
-		database:       database,
-		collectionName: collectionName,
-		statsGetter:    getter,
+		collection: collection.With(collection.Database.Session.Copy()),
+	}
+}
+
+func (u *CollectionSizeCollector) Close() {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if !u.closed {
+		u.collection.Database.Session.Close()
+		u.closed = true
 	}
 }
 
@@ -110,20 +69,32 @@ func (u *CollectionSizeCollector) Describe(c chan<- *prometheus.Desc) {
 
 // Collect implements the prometheus.Collector interface.
 func (u *CollectionSizeCollector) Collect(ch chan<- prometheus.Metric) {
-	stats, err := u.statsGetter.Get(u.database, u.collectionName)
-	if err != nil {
-		log.Errorf("failed to report %v collection stats: %v", u.collectionName, err)
+	var collection *mgo.Collection
+	u.mu.Lock()
+	if !u.closed {
+		collection = u.collection.With(u.collection.Database.Session.Copy())
+	}
+	u.mu.Unlock()
+
+	if collection == nil {
+		log.Errorf("failed to report %v collection stats: collector is closed", u.collection.Name)
+		return
+	}
+	defer collection.Database.Session.Close()
+	var stats stats
+	if err := collection.Database.Run(bson.M{"collStats": collection.Name}, &stats); err != nil {
+		log.Errorf("failed to report %v collection stats: %v", u.collection.Name, err)
 		return
 	}
 
 	mSize, err := prometheus.NewConstMetric(u.sizeDesc, prometheus.GaugeValue, float64(stats.Size))
 	if err != nil {
-		log.Errorf("failed to report %v collection stats: %v", u.collectionName, err)
+		log.Errorf("failed to report %v collection stats: %v", u.collection.Name, err)
 		return
 	}
 	mCount, err := prometheus.NewConstMetric(u.countDesc, prometheus.GaugeValue, float64(stats.Count))
 	if err != nil {
-		log.Errorf("failed to report %v collection stats: %v", u.collectionName, err)
+		log.Errorf("failed to report %v collection stats: %v", u.collection.Name, err)
 		return
 	}
 	ch <- mSize

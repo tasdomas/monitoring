@@ -23,10 +23,10 @@ type collectionSizeSuite struct {
 }
 
 func (s *collectionSizeSuite) TestCollectionSizeReporting(c *gc.C) {
-	getter := monitoring.NewStatsGetter(s.Session)
-	u := monitoring.NewCollectionSizeCollector("test", "test", "test", "test", "test_collection", getter)
-
 	collection := s.Session.DB("test").C("test_collection")
+	u := monitoring.NewCollectionSizeCollector("test", "test", "test", collection)
+	defer u.Close()
+
 	err := collection.Insert(bson.M{"test": true})
 	c.Assert(err, jc.ErrorIsNil)
 
@@ -95,15 +95,16 @@ func (s *collectionSizeSuite) TestCollectionSizeReporting(c *gc.C) {
 	c.Assert(val, gc.Equals, float64(2.0))
 }
 
-func (s *collectionSizeSuite) TestCollectionOnClosedSession(c *gc.C) {
+func (s *collectionSizeSuite) TestCollectionOnClosedCollector(c *gc.C) {
 	session := s.Session.Copy()
-	getter := monitoring.NewStatsGetter(session)
-	getter.Close()
-	u := monitoring.NewCollectionSizeCollector("test", "test", "test", "test", "test_collection", getter)
+	collection := session.DB("test").C("test_collection")
 
-	collection := s.Session.DB("test").C("test_collection")
 	err := collection.Insert(bson.M{"test": true})
 	c.Assert(err, jc.ErrorIsNil)
+
+	u := monitoring.NewCollectionSizeCollector("test", "test", "test", collection)
+	u.Close()
+	session.Close()
 
 	ch := make(chan prometheus.Metric, 2)
 
@@ -127,13 +128,17 @@ func (s *collectionSizeSuite) TestCollectionOnClosedSession(c *gc.C) {
 // we handle this cleanly without panicing.
 func (s *collectionSizeSuite) TestCollectionOnClosedSessionGraceful(c *gc.C) {
 	session := s.Session.Copy()
-	getter := monitoring.NewStatsGetter(session)
-	session.Close() // We close the session directly.
-	u := monitoring.NewCollectionSizeCollector("test", "test", "test", "test", "test_collection", getter)
+	collection := session.DB("test").C("test_collection")
+	u := monitoring.NewCollectionSizeCollector("test", "test", "test", collection)
+	defer u.Close()
 
-	collection := s.Session.DB("test").C("test_collection")
 	err := collection.Insert(bson.M{"test": true})
 	c.Assert(err, jc.ErrorIsNil)
+
+	// We close the session directly.
+	// As the collector has copied the session, this should not
+	// impact its behaviour - it should continue to monitor as usual.
+	session.Close()
 
 	ch := make(chan prometheus.Metric, 2)
 
@@ -141,14 +146,14 @@ func (s *collectionSizeSuite) TestCollectionOnClosedSessionGraceful(c *gc.C) {
 	// read the size
 	select {
 	case <-ch:
-		c.Fatalf("we expected no metric")
 	default:
+		c.Error("metric not provided by collector")
 	}
 
 	// read the count
 	select {
 	case <-ch:
-		c.Fatalf("we expected no metric")
 	default:
+		c.Error("metric not provided by collector")
 	}
 }
