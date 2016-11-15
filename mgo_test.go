@@ -85,13 +85,13 @@ func (s *mgoStatsSuite) TestCollect(c *gc.C) {
 	s.assertGauge(c, obtainedMetrics[2], float64(stats.SlaveConns))
 
 	c.Assert(obtainedMetrics[3].Desc(), jc.DeepEquals, sentOpsDesc)
-	s.assertCounter(c, obtainedMetrics[3], float64(stats.SentOps))
+	s.assertGauge(c, obtainedMetrics[3], float64(stats.SentOps))
 
 	c.Assert(obtainedMetrics[4].Desc(), jc.DeepEquals, receivedOpsDesc)
-	s.assertCounter(c, obtainedMetrics[4], float64(stats.ReceivedOps))
+	s.assertGauge(c, obtainedMetrics[4], float64(stats.ReceivedOps))
 
 	c.Assert(obtainedMetrics[5].Desc(), jc.DeepEquals, receivedDocsDesc)
-	s.assertCounter(c, obtainedMetrics[5], float64(stats.ReceivedDocs))
+	s.assertGauge(c, obtainedMetrics[5], float64(stats.ReceivedDocs))
 
 	c.Assert(obtainedMetrics[6].Desc(), jc.DeepEquals, socketsAliveDesc)
 	s.assertGauge(c, obtainedMetrics[6], float64(stats.SocketsAlive))
@@ -101,14 +101,6 @@ func (s *mgoStatsSuite) TestCollect(c *gc.C) {
 
 	c.Assert(obtainedMetrics[8].Desc(), jc.DeepEquals, socketRefsDesc)
 	s.assertGauge(c, obtainedMetrics[8], float64(stats.SocketRefs))
-}
-
-func (s *mgoStatsSuite) assertCounter(c *gc.C, m prometheus.Metric, value float64) {
-	var metric dto.Metric
-	err := m.Write(&metric)
-	c.Assert(err, jc.ErrorIsNil)
-	c.Assert(metric.Counter, gc.Not(gc.IsNil))
-	c.Assert(*metric.Counter.Value, gc.Equals, value)
 }
 
 func (s *mgoStatsSuite) assertGauge(c *gc.C, m prometheus.Metric, value float64) {

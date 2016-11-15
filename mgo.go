@@ -11,16 +11,23 @@ import (
 // MgoStatsCollector is a prometheus.Collector that reports the values
 // provided by mgo.GetStats.
 type MgoStatsCollector struct {
-	clusters     prometheus.Gauge
-	masterConns  prometheus.Gauge
-	slaveConns   prometheus.Gauge
-	sentOps      prometheus.Counter
-	receivedOps  prometheus.Counter
-	receivedDocs prometheus.Counter
+	clusters    prometheus.Gauge
+	masterConns prometheus.Gauge
+	slaveConns  prometheus.Gauge
+	// The following three metrics are actually incremental, but
+	// we're using Gauges here because the prometheus.Counter interface
+	// implies knowledge of the diff in reported values, which we don't have.
+	sentOps      prometheus.Gauge
+	receivedOps  prometheus.Gauge
+	receivedDocs prometheus.Gauge
+
 	socketsAlive prometheus.Gauge
 	socketsInUse prometheus.Gauge
 	socketRefs   prometheus.Gauge
 }
+
+// Check implementation of prometheus.Collector interface.
+var _ prometheus.Collector = (*MgoStatsCollector)(nil)
 
 // NewMgoStatsCollector creates a MgoStatsCollector for the given
 // namespace (which may be empty).
@@ -46,19 +53,19 @@ func NewMgoStatsCollector(namespace string) *MgoStatsCollector {
 			Name:      "slave_connections",
 			Help:      "Number of slave connections.",
 		}),
-		sentOps: prometheus.NewCounter(prometheus.CounterOpts{
+		sentOps: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: "mgo",
 			Name:      "sent_operations",
 			Help:      "Number of operations sent.",
 		}),
-		receivedOps: prometheus.NewCounter(prometheus.CounterOpts{
+		receivedOps: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: "mgo",
 			Name:      "received_operations",
 			Help:      "Number of operations received.",
 		}),
-		receivedDocs: prometheus.NewCounter(prometheus.CounterOpts{
+		receivedDocs: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: "mgo",
 			Name:      "received_documents",
