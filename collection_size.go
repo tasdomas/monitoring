@@ -33,6 +33,9 @@ type CollectionSizeCollector struct {
 	closed     bool
 }
 
+// Check implementation of prometheus.Collector interface.
+var _ prometheus.Collector = (*CollectionSizeCollector)(nil)
+
 // NewCollectionSizeCollector returns a new collector with specified properties
 // that monitors the size of the given collection.
 // It should be closed after use.

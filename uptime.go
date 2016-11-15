@@ -20,6 +20,9 @@ type UptimeCollector struct {
 	metric prometheus.Metric
 }
 
+// Check implementation of prometheus.Collector interface.
+var _ prometheus.Collector = (*UptimeCollector)(nil)
+
 // NewUptimeCollector returns a new uptime collector with the specified properties.
 // The provided time function will be used to report the uptime.
 func NewUptimeCollector(namespace, subsystem, namePrefix string, t func() time.Time) (*UptimeCollector, error) {
