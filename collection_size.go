@@ -22,6 +22,75 @@ type stats struct {
 	Size  int32 `bson:"size"`
 }
 
+// NewDBCollectionsSizeCollector returns a new collector that monitors sizes and object counts
+// of all collections in the specified database.
+func NewDBCollectionsSizeCollector(namespace string, session *mgo.Session, dbName string) *dbCollectionsSizeCollector {
+	return &dbCollectionsSizeCollector{
+		sizeDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "database", fmt.Sprintf("%s_collection_size_bytes", dbName)),
+			"collection size in bytes",
+			[]string{"collection"},
+			nil,
+		),
+		countDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "database", fmt.Sprintf("%s_collection_doc_count", dbName)),
+			"collection document count",
+			[]string{"collection"},
+			nil),
+		session: session,
+		dbName:  dbName,
+	}
+}
+
+type dbCollectionsSizeCollector struct {
+	sizeDesc  *prometheus.Desc
+	countDesc *prometheus.Desc
+
+	session *mgo.Session
+	dbName  string
+}
+
+var _ prometheus.Collector = (*dbCollectionsSizeCollector)(nil)
+
+// Describe implements the prometheus.Collector interface.
+func (u *dbCollectionsSizeCollector) Describe(c chan<- *prometheus.Desc) {
+	c <- u.sizeDesc
+	c <- u.countDesc
+}
+
+// Collect implements the prometheus.Collector interface.
+func (u *dbCollectionsSizeCollector) Collect(ch chan<- prometheus.Metric) {
+	session := u.session.Copy()
+	defer session.Close()
+
+	collectionNames, err := session.DB(u.dbName).CollectionNames()
+	if err != nil {
+		log.Errorf("failed to get database %v collection names", u.dbName)
+		return
+	}
+
+	for _, collectionName := range collectionNames {
+		var stats stats
+		if err := session.DB(u.dbName).Run(bson.M{"collStats": collectionName}, &stats); err != nil {
+			log.Errorf("failed to report %v collection stats: %v", collectionName, err)
+			return
+		}
+
+		mSize, err := prometheus.NewConstMetric(u.sizeDesc, prometheus.GaugeValue, float64(stats.Size), collectionName)
+		if err != nil {
+			log.Errorf("failed to report %v collection stats: %v", collectionName, err)
+			return
+		}
+		mCount, err := prometheus.NewConstMetric(u.countDesc, prometheus.GaugeValue, float64(stats.Count), collectionName)
+		if err != nil {
+			log.Errorf("failed to report %v collection stats: %v", collectionName, err)
+			return
+		}
+		ch <- mSize
+		ch <- mCount
+	}
+}
+
 // CollectionSizeCollector implements the prometheus.Collector interface and
 // reports the size of the specified mongo collection.
 type CollectionSizeCollector struct {
@@ -55,6 +124,7 @@ func NewCollectionSizeCollector(namespace, subsystem, namePrefix string, collect
 	}
 }
 
+// Close releases all resources used by the collector.
 func (u *CollectionSizeCollector) Close() {
 	u.mu.Lock()
 	defer u.mu.Unlock()

@@ -15,8 +15,98 @@ import (
 )
 
 var _ = gc.Suite(&collectionSizeSuite{})
+var _ = gc.Suite(&dbCollectionsSizeSuite{})
 
 var _ prometheus.Collector = (*monitoring.CollectionSizeCollector)(nil)
+
+type dbCollectionsSizeSuite struct {
+	testing.MgoSuite
+}
+
+func (s *dbCollectionsSizeSuite) TestCollector(c *gc.C) {
+	session := s.Session.Copy()
+	defer session.Close()
+
+	db := session.DB("test")
+	c1 := db.C("c1")
+	c2 := db.C("c2")
+	err := c1.Insert(bson.M{"key": "test1"})
+	c.Assert(err, jc.ErrorIsNil)
+	err = c2.Insert(bson.M{"key": "test2"})
+	c.Assert(err, jc.ErrorIsNil)
+	err = c2.Insert(bson.M{"key": "test3"})
+	c.Assert(err, jc.ErrorIsNil)
+
+	u := monitoring.NewDBCollectionsSizeCollector("test", session, "test")
+
+	ch := make(chan prometheus.Metric, 10)
+	u.Collect(ch)
+
+	assertValue(c, ch, 48, "c1")
+	assertValue(c, ch, 1, "c1")
+	assertValue(c, ch, 96, "c2")
+	assertValue(c, ch, 2, "c2")
+	assertValue(c, ch, 224, "system.indexes")
+	assertValue(c, ch, 2, "system.indexes")
+
+	c3 := db.C("c3")
+	err = c3.Insert(bson.M{"key": "test4"})
+	c.Assert(err, jc.ErrorIsNil)
+
+	u.Collect(ch)
+
+	assertValue(c, ch, 48, "c1")
+	assertValue(c, ch, 1, "c1")
+	assertValue(c, ch, 96, "c2")
+	assertValue(c, ch, 2, "c2")
+	assertValue(c, ch, 48, "c3")
+	assertValue(c, ch, 1, "c3")
+	assertValue(c, ch, 336, "system.indexes")
+	assertValue(c, ch, 3, "system.indexes")
+
+}
+
+func (s *dbCollectionsSizeSuite) TestCollectionOnClosedSession(c *gc.C) {
+	session := s.Session.Copy()
+	defer session.Close()
+
+	db := session.DB("test")
+	collection := db.C("c1")
+	err := collection.Insert(bson.M{"test": true})
+	c.Assert(err, jc.ErrorIsNil)
+
+	u := monitoring.NewDBCollectionsSizeCollector("test", s.Session, "test")
+
+	ch := make(chan prometheus.Metric, 10)
+	u.Collect(ch)
+
+	assertValue(c, ch, 48, "c1")
+	assertValue(c, ch, 1, "c1")
+	assertValue(c, ch, 112, "system.indexes")
+	assertValue(c, ch, 1, "system.indexes")
+}
+
+func assertValue(c *gc.C, ch chan prometheus.Metric, count float64, label string) {
+	var m prometheus.Metric
+	var raw prometheusinternal.Metric
+	select {
+	case m = <-ch:
+	default:
+		c.Error("metric not provided by collector")
+	}
+
+	err := m.Write(&raw)
+	c.Assert(err, jc.ErrorIsNil)
+
+	labels := raw.GetLabel()
+	c.Assert(labels, gc.HasLen, 1)
+	c.Assert(labels[0].GetName(), gc.Equals, "collection")
+	c.Assert(labels[0].GetValue(), gc.Equals, label)
+
+	cnt := raw.GetGauge()
+	value := cnt.GetValue()
+	c.Assert(value, gc.Equals, count)
+}
 
 type collectionSizeSuite struct {
 	testing.MgoSuite
