@@ -42,11 +42,14 @@ func (s *dbCollectionsSizeSuite) TestCollector(c *gc.C) {
 	ch := make(chan prometheus.Metric, 10)
 	u.Collect(ch)
 
-	assertValue(c, ch, 48, "c1")
+	c1Size := getValue(c, ch, "c1")
+	c.Assert(c1Size > 0, jc.IsTrue)
 	assertValue(c, ch, 1, "c1")
-	assertValue(c, ch, 96, "c2")
+	c2Size := getValue(c, ch, "c2")
+	c.Assert(c2Size > 0, jc.IsTrue)
 	assertValue(c, ch, 2, "c2")
-	assertValue(c, ch, 224, "system.indexes")
+	idxSize := getValue(c, ch, "system.indexes")
+	c.Assert(idxSize > 0, jc.IsTrue)
 	assertValue(c, ch, 2, "system.indexes")
 
 	c3 := db.C("c3")
@@ -55,13 +58,17 @@ func (s *dbCollectionsSizeSuite) TestCollector(c *gc.C) {
 
 	u.Collect(ch)
 
-	assertValue(c, ch, 48, "c1")
+	c1Size = getValue(c, ch, "c1")
+	c.Assert(c1Size > 0, jc.IsTrue)
 	assertValue(c, ch, 1, "c1")
-	assertValue(c, ch, 96, "c2")
+	c2Size = getValue(c, ch, "c2")
+	c.Assert(c2Size > 0, jc.IsTrue)
 	assertValue(c, ch, 2, "c2")
-	assertValue(c, ch, 48, "c3")
+	c3Size := getValue(c, ch, "c3")
+	c.Assert(c3Size > 0, jc.IsTrue)
 	assertValue(c, ch, 1, "c3")
-	assertValue(c, ch, 336, "system.indexes")
+	idxSize = getValue(c, ch, "system.indexes")
+	c.Assert(idxSize > 0, jc.IsTrue)
 	assertValue(c, ch, 3, "system.indexes")
 
 }
@@ -80,13 +87,20 @@ func (s *dbCollectionsSizeSuite) TestCollectionOnClosedSession(c *gc.C) {
 	ch := make(chan prometheus.Metric, 10)
 	u.Collect(ch)
 
-	assertValue(c, ch, 48, "c1")
+	c1Size := getValue(c, ch, "c1")
+	c.Assert(c1Size > 0, jc.IsTrue)
 	assertValue(c, ch, 1, "c1")
-	assertValue(c, ch, 112, "system.indexes")
+	idxSize := getValue(c, ch, "system.indexes")
+	c.Assert(idxSize > 0, jc.IsTrue)
 	assertValue(c, ch, 1, "system.indexes")
 }
 
 func assertValue(c *gc.C, ch chan prometheus.Metric, count float64, label string) {
+	value := getValue(c, ch, label)
+	c.Assert(value, gc.Equals, count)
+}
+
+func getValue(c *gc.C, ch chan prometheus.Metric, label string) float64 {
 	var m prometheus.Metric
 	var raw prometheusinternal.Metric
 	select {
@@ -105,7 +119,7 @@ func assertValue(c *gc.C, ch chan prometheus.Metric, count float64, label string
 
 	cnt := raw.GetGauge()
 	value := cnt.GetValue()
-	c.Assert(value, gc.Equals, count)
+	return value
 }
 
 type collectionSizeSuite struct {
