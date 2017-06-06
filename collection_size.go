@@ -18,8 +18,8 @@ var (
 )
 
 type stats struct {
-	Count int32 `bson:"count"`
-	Size  int32 `bson:"size"`
+	Count uint64 `bson:"count"`
+	Size  uint64 `bson:"size"`
 }
 
 // NewDBCollectionsSizeCollector returns a new collector that monitors sizes and object counts
