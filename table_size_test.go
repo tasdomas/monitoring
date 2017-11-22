@@ -1,4 +1,4 @@
-// Copyright 2016 Canonical Ltd.
+// Copyright 2017 Canonical Ltd.
 // Licensed under the LGPLv3, see LICENCE file for details.
 
 package monitoring_test
@@ -7,10 +7,8 @@ import (
 	"database/sql"
 
 	"github.com/CanonicalLtd/omniutils/testing/pgtest"
-	//"github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
 	"github.com/prometheus/client_golang/prometheus"
-	//prometheusinternal "github.com/prometheus/client_model/go"
 	gc "gopkg.in/check.v1"
 
 	"github.com/cloud-green/monitoring"
