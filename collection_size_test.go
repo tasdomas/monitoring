@@ -114,7 +114,6 @@ func getValue(c *gc.C, ch chan prometheus.Metric, label string) float64 {
 
 	labels := raw.GetLabel()
 	c.Assert(labels, gc.HasLen, 1)
-	c.Assert(labels[0].GetName(), gc.Equals, "collection")
 	c.Assert(labels[0].GetValue(), gc.Equals, label)
 
 	cnt := raw.GetGauge()
