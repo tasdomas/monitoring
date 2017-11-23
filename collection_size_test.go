@@ -113,8 +113,10 @@ func getValue(c *gc.C, ch chan prometheus.Metric, label string) float64 {
 	c.Assert(err, jc.ErrorIsNil)
 
 	labels := raw.GetLabel()
-	c.Assert(labels, gc.HasLen, 1)
-	c.Assert(labels[0].GetValue(), gc.Equals, label)
+	// handle for different labeling of table/collection size monitors.
+	// The table or collection name is the last label in any case.
+	l := len(labels)
+	c.Assert(labels[l-1].GetValue(), gc.Equals, label)
 
 	cnt := raw.GetGauge()
 	value := cnt.GetValue()

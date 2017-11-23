@@ -20,9 +20,9 @@ func NewTableSizeCollector(namespace string, db *sql.DB) (*dbTableSizeCollector,
 	}
 	return &dbTableSizeCollector{
 		countDesc: prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "database", fmt.Sprintf("%s_table_row_count", dbName)),
+			prometheus.BuildFQName(namespace, "database", "table_row_count"),
 			"table row count",
-			[]string{"table"},
+			[]string{"database", "table"},
 			nil),
 		db:     db,
 		dbName: dbName,
@@ -77,7 +77,8 @@ func (u *dbTableSizeCollector) Collect(ch chan<- prometheus.Metric) {
 			return
 		}
 
-		mCount, err := prometheus.NewConstMetric(u.countDesc, prometheus.GaugeValue, float64(rows), tableName)
+		mCount, err := prometheus.NewConstMetric(u.countDesc, prometheus.GaugeValue, float64(rows),
+			u.dbName, tableName)
 		if err != nil {
 			log.Errorf("failed to report table size for %q: %v", tableName, err)
 			return
