@@ -40,7 +40,7 @@ func (s *tableSizeSuite) SetUpTest(c *gc.C) {
 }
 
 func (s *tableSizeSuite) TestCollector(c *gc.C) {
-	m, err := monitoring.NewTableSizeCollector("test", s.db, "tests")
+	m, err := monitoring.NewTableSizeCollector("test", s.db)
 	c.Assert(err, jc.ErrorIsNil)
 
 	ch := make(chan prometheus.Metric, 10)
