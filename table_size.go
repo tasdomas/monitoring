@@ -63,18 +63,20 @@ func (u *dbTableSizeCollector) Collect(ch chan<- prometheus.Metric) {
 	rows, err := u.db.Query(tableEstimateQuery)
 	if err != nil {
 		log.Errorf("failed to query existing tables: %v", err)
+		return
 	}
+	defer rows.Close()
 	for rows.Next() {
 		err = rows.Scan(&tableName, &rowEstimate)
 		if err != nil {
-			rows.Close()
 			log.Errorf("failed to scan defined table names: %v", err)
+			return
 		}
 		tables[tableName] = rowEstimate
 	}
 	if err = rows.Err(); err != nil {
-		rows.Close()
 		log.Errorf("failed to scan defined table names: %v", err)
+		return
 	}
 	if len(tables) == 0 {
 		log.Warningf("no tables found on DB %q", u.dbName)
