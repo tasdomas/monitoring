@@ -66,6 +66,7 @@ func (u *dbTableSizeCollector) Collect(ch chan<- prometheus.Metric) {
 		return
 	}
 	defer rows.Close()
+
 	for rows.Next() {
 		err = rows.Scan(&tableName, &rowEstimate)
 		if err != nil {
