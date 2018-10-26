@@ -15,8 +15,12 @@ const rowCountCutoff = 10000.0
 // NewTableSizeCollector returns a new collector that monitors table sizes.
 func NewTableSizeCollector(namespace string, db *sql.DB) (*dbTableSizeCollector, error) {
 	var dbName string
-	q := `SELECT current_database();`
-	err := db.QueryRow(q).Scan(&dbName)
+	err := db.QueryRow(`SELECT current_database()`).Scan(&dbName)
+	if err != nil {
+		return nil, err
+	}
+	var schemaName string
+	err = db.QueryRow(`SELECT current_schema()`).Scan(&schemaName)
 	if err != nil {
 		return nil, err
 	}
@@ -28,6 +32,7 @@ func NewTableSizeCollector(namespace string, db *sql.DB) (*dbTableSizeCollector,
 			nil),
 		db:     db,
 		dbName: dbName,
+		schemaName: schemaName,
 	}, nil
 }
 
@@ -36,6 +41,7 @@ type dbTableSizeCollector struct {
 
 	db     *sql.DB
 	dbName string
+	schemaName string
 }
 
 var _ prometheus.Collector = (*dbTableSizeCollector)(nil)
@@ -54,13 +60,13 @@ func (u *dbTableSizeCollector) Collect(ch chan<- prometheus.Metric) {
 	tableEstimateQuery := `SELECT t.table_name, c.reltuples 
         FROM information_schema.tables t INNER JOIN pg_class c
             ON c.relname = t.table_name 
-            WHERE t.table_schema='public' AND t.table_type='BASE TABLE'`
+            WHERE t.table_schema=$1 AND t.table_type='BASE TABLE'`
 
 	tables := map[string]float64{}
 	var tableName string
 	var rowEstimate float64
 
-	rows, err := u.db.Query(tableEstimateQuery)
+	rows, err := u.db.Query(tableEstimateQuery, u.schemaName)
 	if err != nil {
 		log.Errorf("failed to query existing tables: %v", err)
 		return

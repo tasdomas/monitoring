@@ -106,7 +106,7 @@ func getValue(c *gc.C, ch chan prometheus.Metric, label string) float64 {
 	select {
 	case m = <-ch:
 	default:
-		c.Error("metric not provided by collector")
+		c.Fatal("metric not provided by collector")
 	}
 
 	err := m.Write(&raw)
