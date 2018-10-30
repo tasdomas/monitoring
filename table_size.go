@@ -4,10 +4,15 @@
 package monitoring
 
 import (
+	"context"
+
 	"database/sql"
 	"fmt"
 
+	"github.com/juju/zaputil"
+	"github.com/juju/zaputil/zapctx"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/zap"
 )
 
 const rowCountCutoff = 10000.0
@@ -53,6 +58,7 @@ func (u *dbTableSizeCollector) Describe(c chan<- *prometheus.Desc) {
 
 // Collect implements the prometheus.Collector interface.
 func (u *dbTableSizeCollector) Collect(ch chan<- prometheus.Metric) {
+	logger := zapctx.Logger(context.Background()).With(zap.String("db", u.dbName))
 	// Collecting table sizes is done in two steps. First table row count
 	// estimates are queried, because this is fast.
 	// Then for tables whose row count estimate is below the threshold,
@@ -68,7 +74,7 @@ func (u *dbTableSizeCollector) Collect(ch chan<- prometheus.Metric) {
 
 	rows, err := u.db.Query(tableEstimateQuery, u.schemaName)
 	if err != nil {
-		log.Errorf("failed to query existing tables: %v", err)
+		logger.Error("failed to query existing tables", zaputil.Error(err))
 		return
 	}
 	defer rows.Close()
@@ -76,17 +82,17 @@ func (u *dbTableSizeCollector) Collect(ch chan<- prometheus.Metric) {
 	for rows.Next() {
 		err = rows.Scan(&tableName, &rowEstimate)
 		if err != nil {
-			log.Errorf("failed to scan defined table names: %v", err)
+			logger.Error("failed to scan defined table names", zaputil.Error(err))
 			return
 		}
 		tables[tableName] = rowEstimate
 	}
 	if err = rows.Err(); err != nil {
-		log.Errorf("failed to scan defined table names: %v", err)
+		logger.Error("failed to scan defined table names", zaputil.Error(err))
 		return
 	}
 	if len(tables) == 0 {
-		log.Warningf("no tables found on DB %q", u.dbName)
+		logger.Warn("no tables found on DB")
 		return
 	}
 	for tableName, rowEstimate := range tables {
@@ -96,7 +102,7 @@ func (u *dbTableSizeCollector) Collect(ch chan<- prometheus.Metric) {
 			mCount, err := prometheus.NewConstMetric(u.countDesc, prometheus.GaugeValue, rowEstimate,
 				u.dbName, tableName)
 			if err != nil {
-				log.Errorf("failed to report table size for %q: %v", tableName, err)
+				logger.Error("failed to report table size", zap.String("table", tableName), zaputil.Error(err))
 				return
 			}
 			ch <- mCount
@@ -106,14 +112,14 @@ func (u *dbTableSizeCollector) Collect(ch chan<- prometheus.Metric) {
 		query := fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)
 
 		if err := u.db.QueryRow(query).Scan(&rows); err != nil {
-			log.Errorf("failed to query table size for %q: %v", tableName, err)
+			logger.Error("failed to query table size", zap.String("table", tableName), zaputil.Error(err))
 			return
 		}
 
 		mCount, err := prometheus.NewConstMetric(u.countDesc, prometheus.GaugeValue, float64(rows),
 			u.dbName, tableName)
 		if err != nil {
-			log.Errorf("failed to report table size for %q: %v", tableName, err)
+			logger.Error("failed to report table size", zap.String("table", tableName), zaputil.Error(err))
 			return
 		}
 		ch <- mCount
