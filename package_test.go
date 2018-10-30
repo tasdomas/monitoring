@@ -4,11 +4,8 @@
 package monitoring_test
 
 import (
+	gc "gopkg.in/check.v1"
 	"testing"
-
-	jujutesting "github.com/juju/testing"
 )
 
-func TestPackage(t *testing.T) {
-	jujutesting.MgoTestPackage(t, nil)
-}
+func Test(t *testing.T) { gc.TestingT(t) }
