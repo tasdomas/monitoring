@@ -43,7 +43,7 @@ func (s *tableSizeSuite) TearDownTest(c *gc.C) {
 }
 
 func (s *tableSizeSuite) TestCollector(c *gc.C) {
-	m, err := monitoring.NewTableSizeCollector("test", s.db.DB)
+	m, err := monitoring.NewTableSizeCollector("test", s.db.DB, "tests")
 	c.Assert(err, jc.ErrorIsNil)
 
 	ch := make(chan prometheus.Metric, 10)
@@ -69,6 +69,16 @@ func (s *tableSizeSuite) TestCollector(c *gc.C) {
 	m.Collect(ch)
 	assertValue(c, ch, 24, "tests")
 
+}
+
+func (s *tableSizeSuite) TestCollectorAllTables(c *gc.C) {
+	m, err := monitoring.NewTableSizeCollector("test", s.db.DB)
+	c.Assert(err, jc.ErrorIsNil)
+
+	ch := make(chan prometheus.Metric, 10)
+	m.Collect(ch)
+
+	assertValue(c, ch, 20, "tests")
 }
 
 func assertValue(c *gc.C, ch chan prometheus.Metric, count float64, label string) {
