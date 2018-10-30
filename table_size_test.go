@@ -4,9 +4,7 @@
 package monitoring_test
 
 import (
-	"database/sql"
-
-	"github.com/CanonicalLtd/omniutils/testing/pgtest"
+	"github.com/juju/postgrestest"
 	jc "github.com/juju/testing/checkers"
 	"github.com/prometheus/client_golang/prometheus"
 	gc "gopkg.in/check.v1"
@@ -17,14 +15,11 @@ import (
 var _ = gc.Suite(&tableSizeSuite{})
 
 type tableSizeSuite struct {
-	pgtest.PGSuite
-	db *sql.DB
+	db *postgrestest.DB
 }
 
 func (s *tableSizeSuite) SetUpTest(c *gc.C) {
-	s.PGSuite.SetUpTest(c)
-
-	db, err := sql.Open("postgres", s.URL)
+	db, err := postgrestest.New()
 	c.Assert(err, jc.ErrorIsNil)
 	s.db = db
 
@@ -39,8 +34,15 @@ func (s *tableSizeSuite) SetUpTest(c *gc.C) {
 	}
 }
 
+func (s *tableSizeSuite) TearDownTest(c *gc.C) {
+	if s.db != nil {
+		s.db.Close()
+		s.db = nil
+	}
+}
+
 func (s *tableSizeSuite) TestCollector(c *gc.C) {
-	m, err := monitoring.NewTableSizeCollector("test", s.db)
+	m, err := monitoring.NewTableSizeCollector("test", s.db.DB)
 	c.Assert(err, jc.ErrorIsNil)
 
 	ch := make(chan prometheus.Metric, 10)
