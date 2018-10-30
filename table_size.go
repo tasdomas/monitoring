@@ -7,22 +7,27 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 const rowCountCutoff = 10000.0
 
 // NewTableSizeCollector returns a new collector that monitors table sizes.
-func NewTableSizeCollector(namespace string, db *sql.DB) (*dbTableSizeCollector, error) {
+func NewTableSizeCollector(namespace string, db *sql.DB, tables ...string) (*dbTableSizeCollector, error) {
 	var dbName string
 	err := db.QueryRow(`SELECT current_database()`).Scan(&dbName)
 	if err != nil {
 		return nil, err
 	}
-	var schemaName string
-	err = db.QueryRow(`SELECT current_schema()`).Scan(&schemaName)
+	var schemaName = "public" // use 'public' schema by default
+	var schemaValue sql.NullString
+	err = db.QueryRow(`SELECT current_schema()`).Scan(&schemaValue)
 	if err != nil {
 		return nil, err
+	}
+	if schemaValue.Valid {
+		schemaName = schemaValue.String
 	}
 	return &dbTableSizeCollector{
 		countDesc: prometheus.NewDesc(
@@ -30,18 +35,21 @@ func NewTableSizeCollector(namespace string, db *sql.DB) (*dbTableSizeCollector,
 			"table row count",
 			[]string{"database", "table"},
 			nil),
-		db:     db,
-		dbName: dbName,
+		db:         db,
+		dbName:     dbName,
 		schemaName: schemaName,
+		tables:     tables,
 	}, nil
 }
 
 type dbTableSizeCollector struct {
 	countDesc *prometheus.Desc
 
-	db     *sql.DB
-	dbName string
+	db         *sql.DB
+	dbName     string
 	schemaName string
+
+	tables []string
 }
 
 var _ prometheus.Collector = (*dbTableSizeCollector)(nil)
@@ -60,13 +68,15 @@ func (u *dbTableSizeCollector) Collect(ch chan<- prometheus.Metric) {
 	tableEstimateQuery := `SELECT t.table_name, c.reltuples 
         FROM information_schema.tables t INNER JOIN pg_class c
             ON c.relname = t.table_name 
-            WHERE t.table_schema=$1 AND t.table_type='BASE TABLE'`
+            WHERE t.table_schema=$1 
+             AND t.table_type='BASE TABLE'
+             AND t.table_name = ANY($2)`
 
 	tables := map[string]float64{}
 	var tableName string
 	var rowEstimate float64
 
-	rows, err := u.db.Query(tableEstimateQuery, u.schemaName)
+	rows, err := u.db.Query(tableEstimateQuery, u.schemaName, pq.Array(u.tables))
 	if err != nil {
 		log.Errorf("failed to query existing tables: %v", err)
 		return
